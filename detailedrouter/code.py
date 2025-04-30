@@ -123,62 +123,61 @@ def blocked(v,layer):
             break
     return b
 
-def notInsideGuide(v,layer):
-    b = True
-    for rects in blockers[layer]:
-        if rects.ur.x > v._xy[0] and rects.ll.x < v._xy[0] and rects.ur.y > v._xy[1] and rects.ll.y < v._xy[1]:
-            b = False
+def notInsideGuide(v,layer, bloatedGuide):
+    b = False
+    for rects in bloatedGuide.get_shapes_by_layer(layer):
+        if rects.x2 < v._xy[0] or rects.x1 > v._xy[0] or rects.y2 < v._xy[1] or rects.y1 > v._xy[1]:
+            b = True
             break
     return b
 
-def astar(V, s, t):
+def astar(V, s, t, bloatedGuide):
+    def heuristic(current, goals):
+        return min(abs(current._xy[0] - g._xy[0]) + abs(current._xy[1] - g._xy[1]) for g in goals)
+
     for v in V:
-        v._h = dist(v, t)
+        v._h = heuristic(v, t)
 
-    s._cost = 0
+    # s._cost = 0
     Q = PriorityQueue(V)
+    Q.update(s,0)
     alreadyEvaluated = []
-
+    p=0
     while not Q.empty():
         u = Q.pop()
-        if u == t:
+        if u in t:
+            reached_target = u
             break
         alreadyEvaluated.append(u)
         for layer, neighbors in u._nbrs.items():
             for v in neighbors:
                 if blocked(v, layer):
                     continue
-                if notInsideGuide(v, layer):
+                if notInsideGuide(v, layer, bloatedGuide):
                     continue
                 if v in alreadyEvaluated:
                     continue
-                gnew = u._cost + dist(u, v)+ (10 if layer != v._layer[0] else 0)
+                if u == s:
+                    gnew = u._cost + (10 if layer != v._layer[0] else 0)
+                else:
+                    gnew = u._cost + dist(u, v)+ (10 if layer != v._layer[0] else 0)
                 if v not in Q:
                     Q.push(v)
                 if gnew < v._cost:
                     Q.update(v, gnew)
                     v._parent = u
+                    v._usedLayer = layer
 
     path = []
-    while t._parent is not None:
-        path.append(t)
-        t = t._parent
-    # path.append(s)
-    path.reverse()
+    if reached_target:
+        node = reached_target
+        while node._parent is not None:
+            path.append(node)
+            node = node._parent
+    
     return path
 
 ###############################################################
-class Comp:
-    def __init__(self, comp, dim):
-        self._comp = comp      
-        self._dim = dim        
-        self._nbrs = []        
-        self._index = -1      
-
-    def __repr__(self):
-        return f'{self._comp.name()}'
-    
-
 class Vertex:
     def __init__(self, x, y, cost=math.inf, h=0, parent=None, layer=[]):
         self._xy = (x, y)
@@ -188,6 +187,7 @@ class Vertex:
         self._nbrs = {}
         self._h = h 
         self._f = self._cost + self._h 
+        self._usedLayer = None
 
     def __lt__(self, other):
         return self._f < other._f 
@@ -200,6 +200,12 @@ class Vertex:
     
     def appendLayer(self, layertoAdd):
         self._layer.append(layertoAdd)
+    
+    def resetBack(self):
+        self._cost = math.inf
+        self._parent = None
+        self._h = 0
+        self._f = self._cost + self._h 
 
 
 # def addboundaryPINS(listOfVertices): #to metal tracks grid list
@@ -273,20 +279,26 @@ def gridInsideGuide(metaltracks, netguide):
 
     return grid_map, listOfVertices
 
-def add_path_to_net(path):
+def add_path_to_net(path, layerWidth):
     rectList = []
     for i in range(1, len(path)):
         v1 = path[i-1]
         v2 = path[i]
         
         # Determine the layer and width for spacing
-        layer1 = v1._layer[0]
-        layer2 = v2._layer[0]
-        width = checker.layerWidth.get(layer1, 0)  # Default width if layer1 not found
+        # set1 = v1._layer
+        # set2 = v2._layer
+        # layerList = list(set1.intersection(set2))
+        
+        layer1 = v1._usedLayer
+        layer2 = v2._usedLayer
+        width = layerWidth.get(layer1, 0)  # Default width if layer1 not found
         
         # If layers are different, use the width of the second layer
         if layer1 != layer2:
-            width = checker.layerWidth.get(layer2, 0)
+            width = layerWidth.get(layer2, 0)
+        # else:
+        #     width = checker.layerWidth.get(layer1,0)
 
         x1, y1 = v1._xy
         x2, y2 = v2._xy
@@ -303,9 +315,9 @@ def add_path_to_net(path):
         
         
         # Create the rect and add it to the net
-        rect = Rect(llx, lly, urx, ury)
-        blockers[v1._layer[0]].append(rect)
-        rectList.append(rect)
+        rect = Rect(int(llx), int(lly), int(urx), int(ury))
+        blockers[v1._usedLayer].append(rect)
+        rectList.append((rect,v1._usedLayer))
         # net.addRect(v1._layer[0], llx, lly, urx, ury)
     return rectList
 
@@ -319,13 +331,26 @@ def dummyNodeAddition(gridPoints, srcPoints, endPoints, mettracks):
         sn._nbrs['met1'].append(p)
     for sp in srcPoints:
         for gp in gridPoints:
-            if gp._layer in sp._layer:
-                if mettracks[gp._layer][1] == 1:
-                    if gp._xy[1] == sp._xy[1]:
-                        sp._nbrs[gp._layer].append(gp)
-                else:
-                    if gp._xy[0] == sp._xy[0]:
-                        sp._nbrs[gp._layer].append(gp)
+            for l in gp._layer:
+                if l in sp._layer:
+                    if mettracks[l][1] == 1:
+                        if gp._xy[1] == sp._xy[1]:
+                            if l not in sp._nbrs:
+                                sp._nbrs[l] = []
+                            sp._nbrs[l].append(gp)
+                            if l in gp._nbrs:
+                                gp._nbrs[l].append(sp)
+                            else:
+                                gp._nbrs[l] = []
+                    else:
+                        if gp._xy[0] == sp._xy[0]:
+                            if l not in sp._nbrs:
+                                sp._nbrs[l] = []
+                            sp._nbrs[l].append(gp)
+                            if l in gp._nbrs:
+                                gp._nbrs[l].append(sp)
+                            else:
+                                gp._nbrs[l] = []
     for sp in endPoints:
         for gp in gridPoints:
             for l in gp._layer:
@@ -336,24 +361,25 @@ def dummyNodeAddition(gridPoints, srcPoints, endPoints, mettracks):
                                 sp._nbrs[l].append(gp)
                             else:
                                 sp._nbrs[l] = []
+                            if l in gp._nbrs:
+                                gp._nbrs[l].append(sp)
+                            else:
+                                gp._nbrs[l] = []
                     else:
                         if gp._xy[0] == sp._xy[0]:
+                            if l in gp._nbrs:
+                                gp._nbrs[l].append(sp)
+                            else:
+                                gp._nbrs[l] = []
                             if l in sp._nbrs:
                                 sp._nbrs[l].append(gp)
                             else:
                                 sp._nbrs[l] = []
 
-    en = Vertex(0, 0, layer=endPoints[0]._layer)
-    en._nbrs[endPoints[0]._layer[0]] = []
-    for p in endPoints:
-        if p._layer[-1] not in p._nbrs:
-            p._nbrs[p._layer[-1]] = []
-        p._nbrs[p._layer[-1]].append(en)
-        en._nbrs[endPoints[0]._layer[0]].append(p)
-    return [sn, en] + srcPoints + endPoints
+    return sn, srcPoints, endPoints
 
 
-def pinTrackPoints(rects, metaltracks):
+def pinTrackPoints(rects, metaltracks, bloatGuides):
     sol = []
     for layer in rects:
         for rect in rects[layer]:
@@ -365,26 +391,42 @@ def pinTrackPoints(rects, metaltracks):
                 else:
                     if rect.ur.x <= y and y >= rect.ll.x:
                         sol.append(Vertex(y, rect.ur.y, layer=[layer]))
+    for s in sol:
+        for rect in bloatGuides.shapes:
+            if rect.x2 > s._xy[0] and rect.x1 < s._xy[0] and rect.y2 > s._xy[1] and rect.y1 < s._xy[1]:
+                if rect.layer not in s._layer:
+                    s._layer.append(rect.layer)
     return sol
 
-def portTrackPoints(rects, metaltracks):
+def portTrackPoints(rects, metaltracks, bloatGuides):
     sol = []
     for rect in rects:
         for i in range(metaltracks['met1'][0][1].num):
             y = metaltracks['met1'][0][1].x + i * metaltracks['met1'][0][1].step
             if rect.ur.y <= y and y >= rect.ll.y:
                 sol.append(Vertex(rect.ur.x,y, layer=['met1']))
+    
+    for s in sol:
+        for rect in bloatGuides.shapes:
+            if rect.x2 > s._xy[0] and rect.x1 < s._xy[0] and rect.y2 > s._xy[1] and rect.y1 < s._xy[1]:
+                if rect.layer not in s._layer:
+                    s._layer.append(rect.layer)
     return sol
 
 ###################
+layerWidth = dict()
+layerSpacing = dict()
 def detailed_route(deffile, leffile, guidefile, outdeffile):
+    
     leff = LEFDEFParser.LEFReader()
-    checker.layerWidth
     ideff = LEFDEFParser.DEFReader()
     leff.readLEF(leffile)
     lefDict = {m.name() : m for m in leff.macros()}
     ideff.readDEF(deffile)
 
+    for layer in leff.layers():
+        layerWidth[layer.name()] = layer.width()
+        layerSpacing[layer.name()] = layer.pitch() - layer.width()
 
     insts = {inst.name():checker.Inst(inst, lefDict[inst.macro()]) for inst in ideff.components() if inst.macro() not in checker.skipCells}
     for i in insts:
@@ -404,8 +446,11 @@ def detailed_route(deffile, leffile, guidefile, outdeffile):
 
     nets = list()
     idx = 0
+    b = False
     for net in ideff.nets():
         if net.name() not in checker.skipNets:
+            if any(skip in net.name() for skip in checker.skipNets):
+                continue
             nets.append(checker.Net(net, insts, pins, idx))
             idx += 1
     
@@ -421,12 +466,12 @@ def detailed_route(deffile, leffile, guidefile, outdeffile):
     ###############src and target points
     possibleEndPoints = {}
     possibleSrcPoints = {}
-    for net in nets:
-        if list(net._pins.keys())[0][0] == 'PIN':
-            possibleEndPoints[net._name] = pinTrackPoints(net._pins[list(net._pins.keys())[0]], mettracks)
-        else:
-            possibleEndPoints[net._name] = portTrackPoints(net._pins[list(net._pins.keys())[0]]['li1'], mettracks)
-        possibleSrcPoints[net._name] = portTrackPoints(net._pins[list(net._pins.keys())[1]]['li1'], mettracks)
+    # for net in nets:
+    #     if list(net._pins.keys())[0][0] == 'PIN':
+    #         possibleEndPoints[net._name] = pinTrackPoints(net._pins[list(net._pins.keys())[0]], mettracks)
+    #     else:
+    #         possibleEndPoints[net._name] = portTrackPoints(net._pins[list(net._pins.keys())[0]]['li1'], mettracks)
+    #     possibleSrcPoints[net._name] = portTrackPoints(net._pins[list(net._pins.keys())[1]]['li1'], mettracks)
 
     bloatWithX = ideff.gcgrids()[0].step / 2
     bloatWithY = ideff.gcgrids()[1].step / 2
@@ -434,21 +479,33 @@ def detailed_route(deffile, leffile, guidefile, outdeffile):
     netguide = parse_shape_file(guidefile)
     for netobj in nets:
         netname = netobj._name
+
         if netname in netguide:
             bloatedGuide = bloatguideLines(bloatWithX, bloatWithY, netguide[netname])
             grid_map, gridverticesList = gridInsideGuide(mettracks, bloatedGuide)
+
+            #pins
+            
+            if list(netobj._pins.keys())[0][0] == 'PIN':
+                possibleEndPoints[netobj._name] = pinTrackPoints(netobj._pins[list(netobj._pins.keys())[0]], mettracks, bloatedGuide)
+            else:
+                possibleEndPoints[netobj._name] = portTrackPoints(netobj._pins[list(netobj._pins.keys())[0]]['li1'], mettracks, bloatedGuide)
+            possibleSrcPoints[netobj._name] = portTrackPoints(netobj._pins[list(netobj._pins.keys())[1]]['li1'], mettracks, bloatedGuide)
+
             srcPoints = possibleSrcPoints[netname]
             tgtPoints = possibleEndPoints[netname]
-            verticesList = dummyNodeAddition(gridverticesList, srcPoints, tgtPoints, mettracks)
-            finalVList = verticesList + gridverticesList 
+            s,srcPoints,tgtPoints = dummyNodeAddition(gridverticesList, srcPoints, tgtPoints, mettracks)
+            finalVList =[s] + srcPoints + tgtPoints + gridverticesList 
 
-            path = astar(finalVList, s=verticesList[0], t=verticesList[1])
-            rectList = add_path_to_net(path) 
-
-            for net in ideff.nets():
-                if net.name() == netname:
-                    for r in rectList:
-                        net.addRect(verticesList[0]._layer[0],r)
+            path = astar(finalVList, s=s, t=tgtPoints, bloatedGuide=bloatedGuide)
+            print(netname,path)
+            rectList = add_path_to_net(path, layerWidth) 
+            print(rectList)
+            for n in ideff.nets():
+                if n.name() == netname:
+                    for r,l in rectList:
+                        n.addRect(l,r.ll.x,r.ll.y,r.ur.x,r.ur.y)
+            
 
     ideff.writeDEF("/home/harika/detailedrouter/out.def")
 detailed_route('/home/harika/detailedrouter/add5.def', '/home/harika/detailedrouter/sky130.lef', '/home/harika/detailedrouter/add5.guide', '/home/harika/detailedrouter/out.def')

@@ -293,6 +293,7 @@ def checkConnectivity(layerTrees, nets, insts):
     if len(G.nodes()):
       if not nx.is_connected(G):
         numOpens += 1
+        print(net._name)
 
   return numOpens
 
@@ -335,9 +336,10 @@ def loadAndCheck(odef, idef, lef, plot):
   nets = list()
   idx = 0
   for net in ideff.nets():
-    if net.name() not in skipNets:
-      nets.append(Net(net, insts, pins, idx))
-      idx += 1
+    if any(skip in net.name() for skip in skipNets):
+      continue
+    nets.append(Net(net, insts, pins, idx))
+    idx += 1
 
   netDict = dict()
   for net in nets:

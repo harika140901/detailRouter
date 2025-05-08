@@ -180,37 +180,7 @@ def validate_path_spacing(v1, v2, layer, spacing, metaltracks):
         
     # Create the rect and add it to the net
     bloated_path = Rect(int(llx), int(lly), int(urx), int(ury))
-    
-    # Create a bloated rectangle representing the path with proper spacing
-    # if y1 == y2:  # Horizontal segment
-    #     bloated_path = Rect(
-    #         int(min(x1, x2) - spacing),
-    #         int(y1 - spacing),
-    #         int(max(x1, x2) + spacing),
-    #         int(y1 + spacing)
-    #     )
-    # else:  # Vertical segment
-    #     bloated_path = Rect(
-    #         int(x1 - spacing),
-    #         int(min(y1, y2) - spacing),
-    #         int(x1 + spacing),
-    #         int(max(y1, y2) + spacing)
-    #     )
-    
-    # if y1 == y2:  # Horizontal segment
-    #     bloated_path = Rect(
-    #         int(min(x1, x2)),
-    #         int(y1),
-    #         int(max(x1, x2)),
-    #         int(y1)
-    #     )
-    # else:  # Vertical segment
-    #     bloated_path = Rect(
-    #         int(x1),
-    #         int(min(y1, y2)),
-    #         int(x1),
-    #         int(max(y1, y2))
-    #     )
+
     # Check for intersections with any blockers
     for rect in blockers[layer]:
         if (bloated_path.ll.x < rect.ur.x and bloated_path.ur.x > rect.ll.x and
@@ -336,7 +306,11 @@ def astar(V, s, t, bloatedGuide, metaltracks, layerSpacing, guideCheck = True):
                 # Skip if target (will be handled by the break above)
                 if v in t:
                     guidecheck = False
-                    
+                
+                 # Skip if already evaluated
+                if v in alreadyEvaluated:
+                    continue
+
                 # Skip if path is blocked
                 if u._usedLayer is not None:
                     if not validate_path_spacing(u, v, layer, layerSpacing[layer], metaltracks):
@@ -346,9 +320,6 @@ def astar(V, s, t, bloatedGuide, metaltracks, layerSpacing, guideCheck = True):
                 if notInsideGuide(v, layer, bloatedGuide) and guidecheck:
                     continue
                     
-                # Skip if already evaluated
-                if v in alreadyEvaluated:
-                    continue
                 
                 # Calculate new cost
                 if u == s:
@@ -426,14 +397,15 @@ class Vertex:
 
 # def addboundaryPINS(listOfVertices): #to metal tracks grid list
 #     Vertex(x,y,[])
-
+import copy
 def bloatguideLines(bloatWithX, bloatWithY, netguide):
-    for rect in netguide.shapes:
+    bloated_guide = copy.deepcopy(netguide)
+    for rect in bloated_guide.shapes:
         rect.x1 = rect.x1 - bloatWithX
         rect.x2 = rect.x2 + bloatWithX
         rect.y1 = rect.y1 - bloatWithY
         rect.y2 = rect.y2 + bloatWithY
-    return netguide
+    return bloated_guide
 
 
 def gridInsideGuide(metaltracks, netguide):
@@ -468,12 +440,16 @@ def gridInsideGuide(metaltracks, netguide):
                     ycord.append((y,layer))
                 for n in  netguide.get_shapes_by_layer(available_layers[0]):
                     xcord.append((n.x1, layer))
+                    xcord.append((n.x1, layer))
+                    xcord.append((int((n.x1 + n.x2)/2), layer))
             else:
                 for i in range(metaltracks[layer][0][0].num):
                     x = metaltracks[layer][0][0].x + i * metaltracks[layer][0][0].step
                     xcord.append((x,layer))
                 for n in  netguide.get_shapes_by_layer(available_layers[0]):
                     ycord.append((n.y1, layer))
+                    ycord.append((n.y2, layer))
+                    ycord.append((int((n.y1 + n.y2)/2), layer))
     else:
         print('no metal layer guides found for this layer')
 
@@ -508,14 +484,24 @@ def gridInsideGuide(metaltracks, netguide):
                     v._nbrs[adjLayer] = []
                     
                 # Check all four directions
+                # Check all four directions
                 for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
                     # Calculate step size based on layer orientation
-                    if hORV == 1:  # Horizontal
-                        nx = x + dx * metaltracks.get(adjLayer)[0][0].step
-                        ny = y + dy * metaltracks.get(layer)[0][1].step
-                    else:  # Vertical
-                        nx = x + dx * metaltracks.get(layer)[0][0].step
-                        ny = y + dy * metaltracks.get(adjLayer)[0][1].step
+                    if layer == adjLayer:  # When both layers are the same
+                        if hORV == 1:  # Horizontal
+                            nx = x + dx * metaltracks.get(layer)[0][0].step
+                            ny = y + dy * metaltracks.get(layer)[0][1].step
+                        else:  # Vertical
+                            nx = x + dx * metaltracks.get(layer)[0][0].step
+                            ny = y + dy * metaltracks.get(layer)[0][1].step
+                    else:  # Different layers
+                        if hORV == 1:  # Horizontal
+                            nx = x + dx * metaltracks.get(adjLayer)[0][0].step
+                            ny = y + dy * metaltracks.get(layer)[0][1].step
+                        else:  # Vertical
+                            nx = x + dx * metaltracks.get(layer)[0][0].step
+                            ny = y + dy * metaltracks.get(adjLayer)[0][1].step
+
                         
                     neighbor_key = (nx, ny)
                     if neighbor_key in grid_map:
@@ -863,8 +849,8 @@ def detailed_route(deffile, leffile, guidefile, outdeffile):
     ###############src and target points
     possibleEndPoints = {}
     possibleSrcPoints = {}
-    bloatWithX = ideff.gcgrids()[0].step / 2
-    bloatWithY = ideff.gcgrids()[1].step / 2
+    bloatWithX = ideff.gcgrids()[0].step 
+    bloatWithY = ideff.gcgrids()[1].step 
     ##########################
     netguide = parse_shape_file(guidefile)
     
@@ -894,7 +880,6 @@ def detailed_route(deffile, leffile, guidefile, outdeffile):
     
     # Sort nets by netlength (shortest first)
     net_lengths.sort(key=lambda x: x[1])
-    print(i._name for i,c in net_lengths)
     # Process nets in order of increasing netlength
     for netobj, _ in net_lengths:
         netname = netobj._name
@@ -974,5 +959,5 @@ def detailed_route(deffile, leffile, guidefile, outdeffile):
                             n.addRect(l, int(r.ll.x), int(r.ll.y), int(r.ur.x), int(r.ur.y))
 
 
-    ideff.writeDEF("/home/harika/detailedrouter/out.def")
-detailed_route('/home/harika/detailedrouter/add5.def', '/home/harika/detailedrouter/sky130.lef', '/home/harika/detailedrouter/add5.guide', '/home/harika/detailedrouter/out.def')
+    ideff.writeDEF(outdeffile)
+detailed_route('/home/harika/detailedrouter/c17.def', '/home/harika/detailedrouter/sky130.lef', '/home/harika/detailedrouter/c17.guide', '/home/harika/detailedrouter/c17out.def')

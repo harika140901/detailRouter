@@ -867,8 +867,36 @@ def detailed_route(deffile, leffile, guidefile, outdeffile):
     bloatWithY = ideff.gcgrids()[1].step / 2
     ##########################
     netguide = parse_shape_file(guidefile)
-    print(len(nets))
+    
+    net_lengths = []
     for netobj in nets:
+        netname = netobj._name
+        if netname in netguide:
+            bloatedGuide = bloatguideLines(bloatWithX, bloatWithY, netguide[netname])
+            
+            # Calculate minimum distance between any two pins as the netlength
+            min_netlength = float('inf')
+            pin_keys = list(netobj._pins.keys())
+            
+            if len(pin_keys) >= 2:
+                for i in range(len(pin_keys)):
+                    src_points = pinTrackPoints(netobj._pins[pin_keys[i]], mettracks, bloatedGuide)
+                    for j in range(i+1, len(pin_keys)):
+                        dst_points = pinTrackPoints(netobj._pins[pin_keys[j]], mettracks, bloatedGuide)
+                        
+                        for src in src_points:
+                            for dst in dst_points:
+                                distance = abs(src._xy[0] - dst._xy[0]) + abs(src._xy[1] - dst._xy[1])
+                                min_netlength = min(min_netlength, distance)
+            
+            if min_netlength != float('inf'):
+                net_lengths.append((netobj, min_netlength))
+    
+    # Sort nets by netlength (shortest first)
+    net_lengths.sort(key=lambda x: x[1])
+    print(i._name for i,c in net_lengths)
+    # Process nets in order of increasing netlength
+    for netobj, _ in net_lengths:
         netname = netobj._name
         if netname in netguide:
             bloatedGuide = bloatguideLines(bloatWithX, bloatWithY, netguide[netname])
@@ -878,76 +906,73 @@ def detailed_route(deffile, leffile, guidefile, outdeffile):
             pin_keys = list(netobj._pins.keys())
             
             # If there are only 2 pins, handle as before
-            if len(pin_keys) == 2:
-                tgtPoints = pinTrackPoints(netobj._pins[pin_keys[0]], mettracks, bloatedGuide)
-                srcPoints =  pinTrackPoints(netobj._pins[pin_keys[1]], mettracks, bloatedGuide)
+            # Replace the pin connection logic with a single loop approach
+            if len(pin_keys) >= 2:
+                # Start with the first two pins
+                currentEndPoints = pinTrackPoints(netobj._pins[pin_keys[0]], mettracks, bloatedGuide)
+                currentSrcPoints = pinTrackPoints(netobj._pins[pin_keys[1]], mettracks, bloatedGuide)
                 
-                s, srcPoints, tgtPoints = dummyNodeAddition(gridverticesList, srcPoints, tgtPoints, mettracks)
-                finalVList = [s] + srcPoints + tgtPoints + gridverticesList
-                path = astar(finalVList, s=s, t=tgtPoints, bloatedGuide=bloatedGuide, metaltracks=mettracks, layerSpacing=layerSpacing)
+                s, currentSrcPoints, currentEndPoints = dummyNodeAddition(gridverticesList, currentSrcPoints, currentEndPoints, mettracks)
+                finalVList = [s] + currentSrcPoints + currentEndPoints + gridverticesList
                 
-                if len(path) == 0:
+                firstPath = astar(finalVList, s=s, t=currentEndPoints, bloatedGuide=bloatedGuide, metaltracks=mettracks, layerSpacing=layerSpacing)
+                
+                if len(firstPath) == 0:
                     grid_map, gridverticesList = getAllGridPoints(mettracks, blockers)
-                    s, srcPoints, tgtPoints = dummyNodeAddition(gridverticesList, srcPoints, tgtPoints, mettracks)
-                    finalVList = [s] + srcPoints + tgtPoints + gridverticesList
-                    path = astar(finalVList, s=s, t=tgtPoints, bloatedGuide=bloatedGuide, metaltracks=mettracks, layerSpacing=layerSpacing, guideCheck=False)
-                print(netname, path)
-                rectList = add_path_to_net(path, layerWidth, mettracks)
-                appendingBlockers(rectList, layerSpacing)
+                    s, currentSrcPoints, currentEndPoints = dummyNodeAddition(gridverticesList, currentSrcPoints, currentEndPoints, mettracks)
+                    finalVList = [s] + currentSrcPoints + currentEndPoints + gridverticesList
+                    firstPath = astar(finalVList, s=s, t=currentEndPoints, bloatedGuide=bloatedGuide, metaltracks=mettracks, layerSpacing=layerSpacing, guideCheck=False)
+                finalPath = firstPath
+                allRectLists = []
+                currentRectList = add_path_to_net(firstPath, layerWidth, mettracks)
+                allRectLists.extend(currentRectList)
                 
-                # Add rects to DEF
-                for n in ideff.nets():
-                    if n.name() == netname:
-                        for r, l in rectList:
-                            n.addRect(l, int(r.ll.x), int(r.ll.y), int(r.ur.x), int(r.ur.y))
-            
-            # If there are 3 or more pins, handle incrementally
-            elif len(pin_keys) >= 3:
-                # Connect first two pins
-                firstEndPoints = pinTrackPoints(netobj._pins[pin_keys[0]], mettracks, bloatedGuide)
-                firstSrcPoints = pinTrackPoints(netobj._pins[pin_keys[1]], mettracks, bloatedGuide)
+                # Initialize combined starting points for subsequent iterations
+                combinedStartPoints = currentSrcPoints.copy()
                 
-                s, firstSrcPoints, firstEndPoints = dummyNodeAddition(gridverticesList, firstSrcPoints, firstEndPoints, mettracks)
-                finalVList = [s] + firstSrcPoints + firstEndPoints + gridverticesList
-                firstPath = astar(finalVList, s=s, t=firstEndPoints, bloatedGuide=bloatedGuide, metaltracks=mettracks, layerSpacing=layerSpacing)
-                firstRectList = add_path_to_net(firstPath, layerWidth, mettracks)
-                
+                # Add points from the first path solution
                 layer_to_rects = defaultdict(list)
-
-                for rect, layer in firstRectList:
+                for rect, layer in currentRectList:
                     layer_to_rects[layer].append(rect)
                 
-                # Create additional starting points from the first path
-                additionalStartPoints = []
                 additionalPoints = pinTrackPoints(layer_to_rects, mettracks, bloatedGuide)
-                additionalStartPoints.extend(additionalPoints)
+                combinedStartPoints.extend(additionalPoints)
                 
-                # Connect to the third pin
-                if pin_keys[2][0] == 'PIN':
-                    thirdEndPoints = pinTrackPoints(netobj._pins[pin_keys[2]], mettracks, bloatedGuide)
-                else:
-                    thirdEndPoints = pinTrackPoints(netobj._pins[pin_keys[2]], mettracks, bloatedGuide)
+                # Connect remaining pins incrementally
+                for i in range(2, len(pin_keys)):
+                    nextEndPoints = pinTrackPoints(netobj._pins[pin_keys[i]], mettracks, bloatedGuide)
+                    
+                    s, combinedStartPoints, nextEndPoints = dummyNodeAddition(gridverticesList, combinedStartPoints, nextEndPoints, mettracks)
+                    finalVList = [s] + combinedStartPoints + nextEndPoints + gridverticesList
+                    
+                    nextPath = astar(finalVList, s=s, t=nextEndPoints, bloatedGuide=bloatedGuide, metaltracks=mettracks, layerSpacing=layerSpacing)
+                    
+                    if len(nextPath) == 0:
+                        grid_map, gridverticesList = getAllGridPoints(mettracks, blockers)
+                        s, combinedStartPoints, nextEndPoints = dummyNodeAddition(gridverticesList, combinedStartPoints, nextEndPoints, mettracks)
+                        finalVList = [s] + combinedStartPoints + nextEndPoints + gridverticesList
+                        nextPath = astar(finalVList, s=s, t=nextEndPoints, bloatedGuide=bloatedGuide, metaltracks=mettracks, layerSpacing=layerSpacing, guideCheck=False)
+                    finalPath = finalPath + nextPath
+                    nextRectList = add_path_to_net(nextPath, layerWidth, mettracks)
+                    allRectLists.extend(nextRectList)
+                    
+                    # Update starting points for next iteration
+                    layer_to_rects = defaultdict(list)
+                    for rect, layer in nextRectList:
+                        layer_to_rects[layer].append(rect)
+                    
+                    additionalPoints = pinTrackPoints(layer_to_rects, mettracks, bloatedGuide)
+                    combinedStartPoints.extend(additionalPoints)
                 
-                # Combine original starting points with points from first solution
-                combinedStartPoints = firstSrcPoints + additionalStartPoints
-                
-                # Route from combined starting points to third pin
-                s, combinedStartPoints, thirdEndPoints = dummyNodeAddition(gridverticesList, combinedStartPoints, thirdEndPoints, mettracks)
-                finalVList = [s] + combinedStartPoints + thirdEndPoints + gridverticesList
-                secondPath = astar(finalVList, s=s, t=thirdEndPoints, bloatedGuide=bloatedGuide, metaltracks=mettracks, layerSpacing=layerSpacing)
-                print(netname,firstPath + secondPath)
-                secondRectList = add_path_to_net(secondPath, layerWidth, mettracks)
-                
-                # Combine both solutions
-                combinedRectList = firstRectList + secondRectList
-                appendingBlockers(combinedRectList, layerSpacing)
-                
+                # Add all blockers at once after routing is complete
+                appendingBlockers(allRectLists, layerSpacing)
+                print(netname, finalPath)
                 # Add all rects to DEF
                 for n in ideff.nets():
                     if n.name() == netname:
-                        for r, l in combinedRectList:
+                        for r, l in allRectLists:
                             n.addRect(l, int(r.ll.x), int(r.ll.y), int(r.ur.x), int(r.ur.y))
-            
+
 
     ideff.writeDEF("/home/harika/detailedrouter/out.def")
 detailed_route('/home/harika/detailedrouter/add5.def', '/home/harika/detailedrouter/sky130.lef', '/home/harika/detailedrouter/add5.guide', '/home/harika/detailedrouter/out.def')

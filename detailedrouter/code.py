@@ -767,11 +767,15 @@ def pinTrackPoints(rects, metaltracks, bloatGuides):
     for layer in rects:
         # Get list of adjacent layers based on direction
         adj_layers = checker.adjLayer[layer]
+
         if layer == 'li1':
+            originalLayer = layer
             layer = adj_layers[0]
+        else:
+            originalLayer = layer
         if 'li1' in adj_layers:
             adj_layers.remove('li1')
-        for rect in rects[layer]:
+        for rect in rects[originalLayer]:
             # Process the original layer
             if metaltracks[layer][1] == 1:  # Horizontal layer
                 # Get y-coordinates from the horizontal layer

@@ -255,7 +255,6 @@ def connectGridPoints(vertices, grid_map, metaltracks):
     """Connect grid points based on layer directions"""
     for v in vertices:
         x, y = v._xy
-        
         for layer in v._layer:
             direction = metaltracks[layer][1]
             
@@ -266,40 +265,42 @@ def connectGridPoints(vertices, grid_map, metaltracks):
             # Check horizontal or vertical neighbors based on layer direction
             if direction == 1:  # Horizontal layer
                 # Look for neighbors along x-axis
-                step_layer = None
+                step_layer_list = []
                 for l in v._layer:
                     if l != layer and metaltracks[l][1] == 0:  # Find vertical layer
-                        step_layer = l
-                        break
-                if step_layer:
+                        step_layer_list.append(l)
+                for step_layer in step_layer_list:
                     step = metaltracks[step_layer][0][1].step
                     for nx in [x - step, x + step]:
                         neighbor_key = (nx, y)
                         if neighbor_key in grid_map:
                             neighbor = grid_map[neighbor_key]
                             if layer in neighbor._layer:
-                                v._nbrs[layer].append(neighbor)
+                                if neighbor not in v._nbrs[layer]:
+                                    v._nbrs[layer].append(neighbor)
                                 if layer not in neighbor._nbrs:
                                     neighbor._nbrs[layer] = []
-                                neighbor._nbrs[layer].append(v)
+                                if v not in neighbor._nbrs[layer]:
+                                    neighbor._nbrs[layer].append(v)
             else:  # Vertical layer
                 # Look for neighbors along y-axis
-                step_layer = None
+                step_layer_list = []
                 for l in v._layer:
                     if l != layer and metaltracks[l][1] == 1:  # Find horizontal layer
-                        step_layer = l
-                        break
-                if step_layer:
+                        step_layer_list.append(l)
+                for step_layer in step_layer_list:
                     step = metaltracks[step_layer][0][0].step
                     for ny in [y - step, y + step]:
                         neighbor_key = (x, ny)
                         if neighbor_key in grid_map:
                             neighbor = grid_map[neighbor_key]
                             if layer in neighbor._layer:
-                                v._nbrs[layer].append(neighbor)
+                                if neighbor not in v._nbrs[layer]:
+                                    v._nbrs[layer].append(neighbor)
                                 if layer not in neighbor._nbrs:
                                     neighbor._nbrs[layer] = []
-                                neighbor._nbrs[layer].append(v)
+                                if v not in neighbor._nbrs[layer]:
+                                    neighbor._nbrs[layer].append(v)
 
 def astar(V, s, t, metaltracks, layerSpacing):
     for v in V:
@@ -610,7 +611,7 @@ def dummyNodeAddition(gridPoints, srcPoints, endPoints, mettracks):
         if a not in b._nbrs[l]:
             b._nbrs[l].append(a)
 
-    # For source and end points, connect to closest grid points on each layer/track
+    # For source and end points, connect to closest  points on each layer/track
     for sp_list in [srcPoints, endPoints]:
         for sp in sp_list:
             for l in sp._layer:
@@ -796,8 +797,6 @@ def detailed_route(deffile, leffile, guidefile, outdeffile):
     b = False
     for net in ideff.nets():
         if net.name() not in checker.skipNets:
-            if any(skip in net.name() for skip in checker.skipNets):
-                continue
             nets.append(checker.Net(net, insts, pins, idx))
             idx += 1
     

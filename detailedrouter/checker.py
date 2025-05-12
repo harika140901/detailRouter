@@ -336,10 +336,9 @@ def loadAndCheck(odef, idef, lef, plot):
   nets = list()
   idx = 0
   for net in ideff.nets():
-    if any(skip in net.name() for skip in skipNets):
-      continue
-    nets.append(Net(net, insts, pins, idx))
-    idx += 1
+    if net.name() not in skipNets:
+      nets.append(Net(net, insts, pins, idx))
+      idx += 1
 
   netDict = dict()
   for net in nets:

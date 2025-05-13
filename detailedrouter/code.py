@@ -270,7 +270,7 @@ def connectGridPoints(vertices, grid_map, metaltracks):
                     if l != layer and metaltracks[l][1] == 0:  # Find vertical layer
                         step_layer_list.append(l)
                 for step_layer in step_layer_list:
-                    step = metaltracks[step_layer][0][1].step
+                    step = metaltracks[step_layer][0][0].step
                     for nx in [x - step, x + step]:
                         neighbor_key = (nx, y)
                         if neighbor_key in grid_map:
@@ -289,7 +289,7 @@ def connectGridPoints(vertices, grid_map, metaltracks):
                     if l != layer and metaltracks[l][1] == 1:  # Find horizontal layer
                         step_layer_list.append(l)
                 for step_layer in step_layer_list:
-                    step = metaltracks[step_layer][0][0].step
+                    step = metaltracks[step_layer][0][1].step
                     for ny in [y - step, y + step]:
                         neighbor_key = (x, ny)
                         if neighbor_key in grid_map:
@@ -439,26 +439,26 @@ def gridInsideGuide(metaltracks, netguide):
         # Step 1: Collect valid x and y coordinates from metal tracks
         for layer in available_layers:  # layer just to pass one layer at a time
             if metaltracks[layer][1] == 1:
-                for i in range(metaltracks[layer][0][0].num):
-                    y = metaltracks[layer][0][0].x + i * metaltracks[layer][0][0].step
+                for i in range(metaltracks[layer][0][1].num):
+                    y = metaltracks[layer][0][1].x + i * metaltracks[layer][0][1].step
                     ycord.append((y,layer))
             else:
-                for i in range(metaltracks[layer][0][1].num):
-                    x = metaltracks[layer][0][1].x + i * metaltracks[layer][0][1].step
+                for i in range(metaltracks[layer][0][0].num):
+                    x = metaltracks[layer][0][0].x + i * metaltracks[layer][0][0].step
                     xcord.append((x,layer))
     elif len(available_layers) == 1:
         for layer in available_layers:  # layer just to pass one layer at a time
             if metaltracks[layer][1] == 1:
-                for i in range(metaltracks[layer][0][0].num):
-                    y = metaltracks[layer][0][0].x + i * metaltracks[layer][0][0].step
+                for i in range(metaltracks[layer][0][1].num):
+                    y = metaltracks[layer][0][1].x + i * metaltracks[layer][0][1].step
                     ycord.append((y,layer))
                 for n in  netguide.get_shapes_by_layer(available_layers[0]):
                     xcord.append((n.x1, layer))
                     xcord.append((n.x1, layer))
                     xcord.append((int((n.x1 + n.x2)/2), layer))
             else:
-                for i in range(metaltracks[layer][0][1].num):
-                    x = metaltracks[layer][0][1].x + i * metaltracks[layer][0][1].step
+                for i in range(metaltracks[layer][0][0].num):
+                    x = metaltracks[layer][0][0].x + i * metaltracks[layer][0][0].step
                     xcord.append((x,layer))
                 for n in  netguide.get_shapes_by_layer(available_layers[0]):
                     ycord.append((n.y1, layer))
@@ -486,45 +486,46 @@ def gridInsideGuide(metaltracks, netguide):
                                 grid_map[key]._layer.append(layer)
 
     # After creating vertices, connect them properly
-    for v in listOfVertices:
-        x, y = v._xy
-        for layer in v._layer:
-            hORV = metaltracks[layer][1]
-            for adjLayer in [layer] + checker.adjLayer[layer]:
-                if adjLayer == 'li1':
-                    continue
-                # Initialize neighbor dictionary if needed
-                if adjLayer not in v._nbrs:
-                    v._nbrs[adjLayer] = []
+    connectGridPoints(listOfVertices, grid_map, metaltracks)
+    # for v in listOfVertices:
+    #     x, y = v._xy
+    #     for layer in v._layer:
+    #         hORV = metaltracks[layer][1]
+    #         for adjLayer in [layer] + checker.adjLayer[layer]:
+    #             if adjLayer == 'li1':
+    #                 continue
+    #             # Initialize neighbor dictionary if needed
+    #             if adjLayer not in v._nbrs:
+    #                 v._nbrs[adjLayer] = []
                     
-                # Check all four directions
-                # Check all four directions
-                for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-                    # Calculate step size based on layer orientation
-                    if layer == adjLayer:  # When both layers are the same
-                        if hORV == 1:  # Horizontal
-                            nx = x + dx * metaltracks.get(layer)[0][0].step
-                            ny = y + dy * metaltracks.get(layer)[0][1].step
-                        else:  # Vertical
-                            nx = x + dx * metaltracks.get(layer)[0][0].step
-                            ny = y + dy * metaltracks.get(layer)[0][1].step
-                    else:  # Different layers
-                        if hORV == 1:  # Horizontal
-                            nx = x + dx * metaltracks.get(adjLayer)[0][0].step
-                            ny = y + dy * metaltracks.get(layer)[0][1].step
-                        else:  # Vertical
-                            nx = x + dx * metaltracks.get(layer)[0][0].step
-                            ny = y + dy * metaltracks.get(adjLayer)[0][1].step
+    #             # Check all four directions
+    #             # Check all four directions
+    #             for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+    #                 # Calculate step size based on layer orientation
+    #                 if layer == adjLayer:  # When both layers are the same
+    #                     if hORV == 1:  # Horizontal
+    #                         nx = x + dx * metaltracks.get(layer)[0][1].step
+    #                         ny = y + dy * metaltracks.get(layer)[0][0].step
+    #                     else:  # Vertical
+    #                         nx = x + dx * metaltracks.get(layer)[0][1].step
+    #                         ny = y + dy * metaltracks.get(layer)[0][0].step
+    #                 else:  # Different layers
+    #                     if hORV == 1:  # Horizontal
+    #                         nx = x + dx * metaltracks.get(adjLayer)[0][1].step
+    #                         ny = y + dy * metaltracks.get(layer)[0][0].step
+    #                     else:  # Vertical
+    #                         nx = x + dx * metaltracks.get(layer)[0][1].step
+    #                         ny = y + dy * metaltracks.get(adjLayer)[0][0].step
 
                         
-                    neighbor_key = (nx, ny)
-                    if neighbor_key in grid_map:
-                        neighbor = grid_map[neighbor_key]
-                        # Check if neighbor is in a valid guide for this layer
-                        for rect in netguide.get_shapes_by_layer(adjLayer):
-                            if rect.x1 <= nx <= rect.x2 and rect.y1 <= ny <= rect.y2:
-                                v._nbrs[adjLayer].append(neighbor)
-                                break
+    #                 neighbor_key = (nx, ny)
+    #                 if neighbor_key in grid_map:
+    #                     neighbor = grid_map[neighbor_key]
+    #                     # Check if neighbor is in a valid guide for this layer
+    #                     for rect in netguide.get_shapes_by_layer(adjLayer):
+    #                         if rect.x1 <= nx <= rect.x2 and rect.y1 <= ny <= rect.y2:
+    #                             v._nbrs[adjLayer].append(neighbor)
+    #                             break
 
 # Ensure bidirectional connections
     for v in listOfVertices:
@@ -697,8 +698,8 @@ def pinTrackPoints(rects, metaltracks, bloatGuides):
             # Process the original layer
             if metaltracks[layer][1] == 1:  # Horizontal layer
                 # Get y-coordinates from the horizontal layer
-                all_y_coords = [metaltracks[layer][0][0].x + i * metaltracks[layer][0][0].step
-                               for i in range(metaltracks[layer][0][0].num)]
+                all_y_coords = [metaltracks[layer][0][1].x + i * metaltracks[layer][0][1].step
+                               for i in range(metaltracks[layer][0][1].num)]
                 
                 intersecting_y = [y for y in all_y_coords if rect.ll.y <= y <= rect.ur.y]
                 
@@ -725,8 +726,8 @@ def pinTrackPoints(rects, metaltracks, bloatGuides):
             
             else:  # Vertical layer
                 # Get x-coordinates from the vertical layer
-                all_x_coords = [metaltracks[layer][0][1].x + i * metaltracks[layer][0][1].step
-                               for i in range(metaltracks[layer][0][1].num)]
+                all_x_coords = [metaltracks[layer][0][0].x + i * metaltracks[layer][0][0].step
+                               for i in range(metaltracks[layer][0][0].num)]
                 
                 intersecting_x = [x for x in all_x_coords if rect.ll.x <= x <= rect.ur.x]
                 
@@ -734,8 +735,8 @@ def pinTrackPoints(rects, metaltracks, bloatGuides):
                 for adj_layer in adj_layers:
                     if layer != adj_layer:
                         if metaltracks[adj_layer][1] == 1:  # Horizontal layer
-                            all_y_coords = [metaltracks[adj_layer][0][0].x + i * metaltracks[adj_layer][0][0].step
-                                        for i in range(metaltracks[adj_layer][0][0].num)]
+                            all_y_coords = [metaltracks[adj_layer][0][1].x + i * metaltracks[adj_layer][0][1].step
+                                        for i in range(metaltracks[adj_layer][0][1].num)]
                             
                             intersecting_y = [y for y in all_y_coords if rect.ll.y <= y <= rect.ur.y]
                             
@@ -885,8 +886,11 @@ def detailed_route(deffile, leffile, guidefile, outdeffile):
                 if len(finalPath) == 0:
                         print(f"Warning: Failed to find path for {netname} using guide-based routing. Trying global routing...")
                 allRectLists = []
-                currentRectList = add_path_to_net(firstPath, layerWidth, mettracks)
-                allRectLists.extend(currentRectList)
+                dontadd = True
+                if len(firstPath) != 0:
+                    currentRectList = add_path_to_net(firstPath, layerWidth, mettracks)
+                    allRectLists.extend(currentRectList)
+                    dontadd = False
                 
                 # Initialize combined starting points for subsequent iterations
                 combinedStartPoints = currentSrcPoints.copy()
@@ -923,6 +927,10 @@ def detailed_route(deffile, leffile, guidefile, outdeffile):
                         finalVList = [s] + combinedStartPoints + nextEndPoints + gridverticesList
                         nextPath = astar(finalVList, s=s, t=nextEndPoints, metaltracks=mettracks, layerSpacing=layerSpacing)
                     finalPath = finalPath + nextPath
+                    if len(nextPath) == 0:
+                        print(f"Warning: Failed to find path for {netname} using guide-based routing. Trying global routing...")
+                        dontadd = True
+                        break
                     if len(finalPath) == 0:
                         print(f"Warning: Failed to find path for {netname} using guide-based routing. Trying global routing...")
                     nextRectList = add_path_to_net(nextPath, layerWidth, mettracks)
@@ -937,14 +945,15 @@ def detailed_route(deffile, leffile, guidefile, outdeffile):
                     combinedStartPoints.extend(additionalPoints)
                 
                 # Add all blockers at once after routing is complete
-                appendingBlockers(allRectLists, layerSpacing)
-                appendingBlockerswithoutSpaceing(allRectLists)
-                print(netname, finalPath)
-                # Add all rects to DEF
-                for n in ideff.nets():
-                    if n.name() == netname:
-                        for r, l in allRectLists:
-                            n.addRect(l, int(r.ll.x), int(r.ll.y), int(r.ur.x), int(r.ur.y))
+                if not dontadd:
+                    appendingBlockers(allRectLists, layerSpacing)
+                    appendingBlockerswithoutSpaceing(allRectLists)
+                    print(netname, finalPath)
+                    # Add all rects to DEF
+                    for n in ideff.nets():
+                        if n.name() == netname:
+                            for r, l in allRectLists:
+                                n.addRect(l, int(r.ll.x), int(r.ll.y), int(r.ur.x), int(r.ur.y))
 
 
     ideff.writeDEF(outdeffile)
